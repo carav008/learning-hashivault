@@ -1,0 +1,73 @@
+---
+- hosts: "{{ passed_in_hosts }}" 
+  remote_user: ec2-user
+  become: yes
+  become_user: root
+  tasks: 
+    - name: create {{ app_name }} group 
+      group: 
+        name: "{{ app_name }}" 
+
+    - name: create {{ app_name }} user 
+      user: 
+        name: "{{ app_name }}"
+        group: "{{ app_name }}" 
+
+    - name: get the {{ app_name }} package
+      unarchive: 
+        src: "https://releases.hashicorp.com/{{ app_name }}/{{ app_version }}/{{ app_name }}_{{ app_version }}_linux_amd64.zip"
+        dest: /tmp/
+        remote_src: yes
+
+    - name: move {{ app_name }} binary 
+      shell: "/usr/bin/mv /tmp/{{ app_name }} /usr/bin/{{ app_name }}"
+      failed_when: false
+
+    - name: create etc-vault directory 
+      file: 
+        path: /etc/vault 
+        state: directory 
+        mode: 0755
+        owner: "{{ app_name }}"
+        group: "{{ app_name }}"
+      when: app_name == 'vault' 
+
+    - name: create consul.d directory 
+      file: 
+        path: /etc/consul.d 
+        state: directory 
+        mode: 0755
+        owner: "{{ app_name }}"
+        group: "{{ app_name }}"
+      when: app_name == 'consul' 
+
+    - name: create ui.json for consul 
+      copy: 
+        src: files/ui.json
+        dest: /etc/consul.d/ui.json
+        mode: 0644 
+        owner: "{{ app_name }}"
+        group: "{{ app_name }}"
+      
+
+    - name: Template out starting config 
+      template: 
+        src: config.hcl.j2 
+        dest: /etc/vault/config.hcl 
+        mode: 0644
+        owner: "{{ app_name }}"
+        group: "{{ app_name }}"
+      when: app_name == 'vault' 
+        
+    - name: Template out systemd startup script 
+      template: 
+        src: "{{ app_name }}-service.j2" 
+        dest: "/etc/systemd/system/{{ app_name }}.service"
+        mode: 0644 
+
+    - name: start and enable the {{ app_name }} service 
+      systemd: 
+        name: "{{ app_name }}" 
+        state: started 
+        enabled: yes 
+        daemon_reload: yes
